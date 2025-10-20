@@ -54,13 +54,7 @@ public class AudioWebSocketHandler extends TextWebSocketHandler { // Correct bas
 	
 	private void startStreaming(WebSocketSession session) throws Exception {
 		AudioStreamSession audioSession = getAudioSession(session);
-        if (audioSession == null) {
-            // Create new session if it doesn't exist
-            audioSession = new AudioStreamSession(session, speechService);
-            audioSession.startStreaming();
-            sessions.put(session.getId(), audioSession);
-            System.out.println("New audio session created for: " + session.getId());
-        }else {
+        if(audioSession != null) {
         	audioSession.startStreaming();
         	sessions.put(session.getId(), audioSession);
         }

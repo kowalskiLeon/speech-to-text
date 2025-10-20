@@ -30,8 +30,8 @@ public class Recognition {
                 )
                 .setInterimResults(true)
                 .setEnableVoiceActivityEvents(true) // Enable voice activity events
-                .setSingleUtterance(true)
-                .setVoiceActivityTimeout(voiceActivityTimeout) // Apply the timeout settings
+                //.setSingleUtterance(true)
+                //.setVoiceActivityTimeout(voiceActivityTimeout) // Apply the timeout settings
                 .build();
 
         return config;

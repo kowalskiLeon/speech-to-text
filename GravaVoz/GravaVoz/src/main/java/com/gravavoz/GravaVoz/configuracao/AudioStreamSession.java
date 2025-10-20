@@ -145,7 +145,7 @@ public class AudioStreamSession {
             try {
                 while (isStreaming.get() || !audioQueue.isEmpty()) {
                     // This call blocks until an audio chunk is available or the timeout occurs
-                    byte[] audioData = audioQueue.poll(400, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    byte[] audioData = audioQueue.poll(1000, java.util.concurrent.TimeUnit.MILLISECONDS);
                     if (audioData != null && isStreaming.get() && clientStream != null) {
                         StreamingRecognizeRequest audioRequest = StreamingRecognizeRequest.newBuilder()
                                 .setAudioContent(ByteString.copyFrom(audioData))
