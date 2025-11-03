@@ -5,6 +5,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.gravavoz.GravaVoz.service.SpeechToTextService;
 
 import java.io.ByteArrayOutputStream;
@@ -26,9 +27,8 @@ public class AudioWebSocketHandler extends TextWebSocketHandler { // Correct bas
 	@Override
 	public void afterConnectionEstablished(WebSocketSession session) throws Exception {
 		System.out.println("New connection: " + session.getId());
-		// The SpeechToTextService is now properly available to pass to the session.
 		sessions.put(session.getId(), new AudioStreamSession(session, speechService));
-		// session.sendMessage(new TextMessage("New connection: " + session.getId()));
+		System.out.println("Number of sessions: " + sessions.size());
 	}
 
 	@Override
@@ -61,10 +61,7 @@ public class AudioWebSocketHandler extends TextWebSocketHandler { // Correct bas
 	}
 	
 	private void stopStreaming(WebSocketSession session) throws Exception {
-		AudioStreamSession audioSession = sessions.remove(session.getId());
-		if (audioSession != null) {
-			audioSession.stopStreaming();
-		}
+		removeSession(session);
 	}
 	
 
@@ -103,16 +100,23 @@ public class AudioWebSocketHandler extends TextWebSocketHandler { // Correct bas
 	private AudioStreamSession getAudioSession(WebSocketSession session) {
 	    return sessions.get(session.getId());
 	}
+	
 
 	// Map to store audio sessions (you need to declare this in your class)
 	// private final Map<String, AudioStreamSession> audioSessions = new ConcurrentHashMap<>();
 
 	@Override
 	public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
+		removeSession(session);
+	}
+
+	private void removeSession(WebSocketSession session) {
 		AudioStreamSession audioSession = sessions.remove(session.getId());
 		if (audioSession != null) {
 			audioSession.stopStreaming();
+			
 		}
 		System.out.println("Conexão de audio fechada.");
+		
 	}
 }

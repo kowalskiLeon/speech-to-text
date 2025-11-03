@@ -31,6 +31,7 @@ public class AudioStreamSession {
     public AudioStreamSession(WebSocketSession webSocketSession, SpeechToTextService speechService) {
         this.webSocketSession = webSocketSession;
         this.speechService = speechService;
+        this.sendConnectionMessage(webSocketSession.getId());
     }
 
     public void startStreaming() throws IOException {
@@ -41,6 +42,7 @@ public class AudioStreamSession {
 
         this.speechClient = SpeechClient.create();
         System.out.println("Iniciando streaming de áudio para sessão: " + webSocketSession.getId());
+        sendConnectionMessage(webSocketSession.getId());
         Recognition r = new Recognition();
         // Configuração do streaming (mantida igual)
         StreamingRecognitionConfig streamingConfig = r.recoginitionFeatures();
@@ -57,6 +59,7 @@ public class AudioStreamSession {
                 @Override
                 public void onResponse(StreamingRecognizeResponse response) {
                     System.out.println("Resposta bruta do Google: " + response.toString());
+                    sendActivityMessage( webSocketSession.getId(), response.toString());
                     
                     // Processa a resposta para extrair as transcrições
                     try {
@@ -99,7 +102,11 @@ public class AudioStreamSession {
                 @Override
                 public void onComplete() {
                     System.out.println("Stream do Google Speech-to-Text finalizado");
+                    speechClient.shutdown();
+                    speechClient.close();
+                    stopStreaming();
                     isStreaming.set(false);
+                    
                 }
                 
                 private void sendTranscriptionToClient(String transcript, boolean isFinal, double confidence) {
@@ -121,6 +128,9 @@ public class AudioStreamSession {
                     }
                 }
                 
+               
+                   
+                
                 
                 
             };
@@ -137,9 +147,45 @@ public class AudioStreamSession {
         startStreamingWorker();
     }
 
-    /**
-     * Starts a dedicated thread to send audio data from the queue to Google.
-     */
+    public void sendConnectionMessage(String id) {
+		
+    	 try {
+             if (webSocketSession.isOpen()) {
+                 ObjectMapper mapper = new ObjectMapper();
+                 ObjectNode jsonMessage = mapper.createObjectNode();
+                 jsonMessage.put("type", "CONNECTION");
+                 jsonMessage.put("id", id);
+
+                 String messageString = mapper.writeValueAsString(jsonMessage);
+                 webSocketSession.sendMessage(new TextMessage(messageString));
+                 System.out.println("Enviado para cliente: " + messageString);
+             }
+         } catch (Exception e) {
+             System.err.println("Erro ao enviar transcrição para cliente: " + e.getMessage());
+         }
+     
+	}
+    
+    public void sendActivityMessage(String id, String activity) {
+		
+   	 try {
+            if (webSocketSession.isOpen()) {
+                ObjectMapper mapper = new ObjectMapper();
+                ObjectNode jsonMessage = mapper.createObjectNode();
+                jsonMessage.put("type", activity);
+                jsonMessage.put("id", id);
+
+                String messageString = mapper.writeValueAsString(jsonMessage);
+                webSocketSession.sendMessage(new TextMessage(messageString));
+                System.out.println("Enviado para cliente: " + messageString);
+            }
+        } catch (Exception e) {
+            System.err.println("Erro ao enviar transcrição para cliente: " + e.getMessage());
+        }
+    
+	}
+
+    
     private void startStreamingWorker() {
         streamingWorkerThread = new Thread(() -> {
             try {
@@ -151,8 +197,7 @@ public class AudioStreamSession {
                                 .setAudioContent(ByteString.copyFrom(audioData))
                                 .build();
                         clientStream.send(audioRequest);
-                        //System.out.println("Chunk de áudio enviado (" + audioData.length + " bytes)");
-                    }
+                      }
                 }
             } catch (InterruptedException e) {
                 System.out.println("Worker thread de streaming interrompido.");
@@ -167,7 +212,6 @@ public class AudioStreamSession {
     }
 
     public void processAudioChunk(byte[] audioData) {
-        // Simply add the chunk to the queue. The worker thread will handle it.
         if (isStreaming.get()) {
             try {
                 audioQueue.put(audioData);
@@ -180,9 +224,7 @@ public class AudioStreamSession {
         }
     }
 
-    // The methods processSpeechResponse, sendTranscriptionToClient, sendErrorToClient,
-    // stopStreaming, cleanup, isStreaming, and getFinalTranscript remain the SAME as in your original code.
-
+  
     public void stopStreaming() {
         isStreaming.set(false);
         if (clientStream != null) {
@@ -195,5 +237,5 @@ public class AudioStreamSession {
         }
     }
 
-    // ... (Keep your existing cleanup, isStreaming, and getFinalTranscript methods)
+
 }
