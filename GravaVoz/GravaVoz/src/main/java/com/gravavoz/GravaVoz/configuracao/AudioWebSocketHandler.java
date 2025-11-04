@@ -46,8 +46,8 @@ public class AudioWebSocketHandler extends TextWebSocketHandler { // Correct bas
 		}
 		
 		if ("stop_streaming".equals(jsonNode.get("type").asText())) {
-			System.out.println(jsonNode.get("type").asText()+" "+jsonNode.get("data").asText());
-			this.stopStreaming(session);
+			System.out.println("Fechamento requisitado");
+			this.pauseSession(session);
 		}
 
 	}
@@ -56,7 +56,6 @@ public class AudioWebSocketHandler extends TextWebSocketHandler { // Correct bas
 		AudioStreamSession audioSession = getAudioSession(session);
         if(audioSession != null) {
         	audioSession.startStreaming();
-        	sessions.put(session.getId(), audioSession);
         }
 	}
 	
@@ -78,11 +77,7 @@ public class AudioWebSocketHandler extends TextWebSocketHandler { // Correct bas
             // Get or create audio session for this WebSocket session
             AudioStreamSession audioSession = getAudioSession(session);
             if (audioSession == null) {
-                // Create new session and start streaming ONCE
-                audioSession = new AudioStreamSession(session, speechService);
-                audioSession.startStreaming(); // Start the stream and worker thread
-                sessions.put(session.getId(), audioSession);
-                System.out.println("New audio session created and streaming started for: " + session.getId());
+                return ;
             }
             
             // This now just adds the chunk to the queue
@@ -110,6 +105,16 @@ public class AudioWebSocketHandler extends TextWebSocketHandler { // Correct bas
 		removeSession(session);
 	}
 
+	private void pauseSession(WebSocketSession session) {
+		AudioStreamSession audioSession = getAudioSession(session);
+		if (audioSession != null) {
+			audioSession.pauseStreaming();
+			
+		}
+		System.out.println("Conexão de audio pausada.");
+		
+	}
+	
 	private void removeSession(WebSocketSession session) {
 		AudioStreamSession audioSession = sessions.remove(session.getId());
 		if (audioSession != null) {

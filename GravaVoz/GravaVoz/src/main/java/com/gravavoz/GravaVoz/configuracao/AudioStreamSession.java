@@ -8,8 +8,12 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.Duration;
 import com.gravavoz.GravaVoz.service.SpeechToTextService;
 import org.springframework.web.socket.WebSocketSession;
+
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -24,7 +28,6 @@ public class AudioStreamSession {
     private final AtomicBoolean isStreaming = new AtomicBoolean(false);
     private final List<String> transcriptBuffer = new ArrayList<>();
 
-    // Critical: Use a BlockingQueue to buffer audio chunks
     private final BlockingQueue<byte[]> audioQueue = new LinkedBlockingQueue<>();
     private Thread streamingWorkerThread;
 
@@ -44,10 +47,8 @@ public class AudioStreamSession {
         System.out.println("Iniciando streaming de áudio para sessão: " + webSocketSession.getId());
         sendConnectionMessage(webSocketSession.getId());
         Recognition r = new Recognition();
-        // Configuração do streaming (mantida igual)
         StreamingRecognitionConfig streamingConfig = r.recoginitionFeatures();
 
-        // Response observer (mantido igual)
         com.google.api.gax.rpc.ResponseObserver<StreamingRecognizeResponse> responseObserver = 
             new com.google.api.gax.rpc.ResponseObserver<StreamingRecognizeResponse>() {
                 
@@ -74,12 +75,10 @@ public class AudioStreamSession {
                                 System.out.println("---");
                                 
                                 if (result.getIsFinal()) {
-                                    // Transcrição final - adiciona ao buffer e envia para o cliente
                                     transcriptBuffer.add(transcript);
                                     sendTranscriptionToClient(transcript, true, confidence);
                                     System.out.println("Transcrição FINAL: " + transcript);
                                 } else {
-                                    // Transcrição intermediária - envia para feedback em tempo real
                                     sendTranscriptionToClient(transcript, false, confidence);
                                     System.out.println("Transcrição INTERIM: " + transcript);
                                 }
@@ -121,7 +120,6 @@ public class AudioStreamSession {
 
                             String messageString = mapper.writeValueAsString(jsonMessage);
                             webSocketSession.sendMessage(new TextMessage(messageString));
-                            System.out.println("Enviado para cliente: " + messageString);
                         }
                     } catch (Exception e) {
                         System.err.println("Erro ao enviar transcrição para cliente: " + e.getMessage());
@@ -137,7 +135,6 @@ public class AudioStreamSession {
 
         this.clientStream = speechClient.streamingRecognizeCallable().splitCall(responseObserver);
 
-        // Envia a configuração inicial
         StreamingRecognizeRequest configRequest = StreamingRecognizeRequest.newBuilder()
                 .setStreamingConfig(streamingConfig)
                 .build();
@@ -158,7 +155,6 @@ public class AudioStreamSession {
 
                  String messageString = mapper.writeValueAsString(jsonMessage);
                  webSocketSession.sendMessage(new TextMessage(messageString));
-                 System.out.println("Enviado para cliente: " + messageString);
              }
          } catch (Exception e) {
              System.err.println("Erro ao enviar transcrição para cliente: " + e.getMessage());
@@ -177,7 +173,6 @@ public class AudioStreamSession {
 
                 String messageString = mapper.writeValueAsString(jsonMessage);
                 webSocketSession.sendMessage(new TextMessage(messageString));
-                System.out.println("Enviado para cliente: " + messageString);
             }
         } catch (Exception e) {
             System.err.println("Erro ao enviar transcrição para cliente: " + e.getMessage());
@@ -188,16 +183,27 @@ public class AudioStreamSession {
     
     private void startStreamingWorker() {
         streamingWorkerThread = new Thread(() -> {
+            final int TARGET_CHUNK_SIZE = 65536; // 8KB
+            final int MAX_WAIT_MS = 1000;
+            
+            ByteArrayOutputStream bufferStream = new ByteArrayOutputStream(TARGET_CHUNK_SIZE);
+            
             try {
-                while (isStreaming.get() || !audioQueue.isEmpty()) {
-                    // This call blocks until an audio chunk is available or the timeout occurs
-                    byte[] audioData = audioQueue.poll(1000, java.util.concurrent.TimeUnit.MILLISECONDS);
-                    if (audioData != null && isStreaming.get() && clientStream != null) {
-                        StreamingRecognizeRequest audioRequest = StreamingRecognizeRequest.newBuilder()
-                                .setAudioContent(ByteString.copyFrom(audioData))
-                                .build();
-                        clientStream.send(audioRequest);
-                      }
+                while (isStreaming.get()) {
+                    byte[] audioData = audioQueue.poll(MAX_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    if (audioData != null && audioData.length > 0) {
+                        bufferStream.write(audioData);
+                    }
+                    
+                    if(bufferStream.size() >= TARGET_CHUNK_SIZE) {
+                    	sendBufferedAudio(bufferStream.toByteArray());
+                    	bufferStream.reset();
+                    }
+                }
+                
+                // Envia quaisquer dados remanescentes
+                if (bufferStream.size() > 0) {
+                    sendBufferedAudio(bufferStream.toByteArray());
                 }
             } catch (InterruptedException e) {
                 System.out.println("Worker thread de streaming interrompido.");
@@ -205,10 +211,24 @@ public class AudioStreamSession {
             } catch (Exception e) {
                 System.err.println("Erro no worker thread ao enviar áudio: " + e.getMessage());
                 isStreaming.set(false);
+            } finally {
+                try { bufferStream.close(); } catch (IOException ignored) {}
             }
         }, "AudioStreamWorker-" + webSocketSession.getId());
 
         streamingWorkerThread.start();
+    }
+
+    private void sendBufferedAudio(byte[] audioData) {
+        if (!isStreaming.get() || clientStream == null) return;
+        
+        LocalTime time = LocalTime.now();
+        System.out.println(time + ": Enviando chunk otimizado -> " + audioData.length);
+        
+        StreamingRecognizeRequest audioRequest = StreamingRecognizeRequest.newBuilder()
+                .setAudioContent(ByteString.copyFrom(audioData))
+                .build();
+        clientStream.send(audioRequest);
     }
 
     public void processAudioChunk(byte[] audioData) {
@@ -219,11 +239,17 @@ public class AudioStreamSession {
                 Thread.currentThread().interrupt();
                 System.err.println("Erro ao adicionar chunk na fila: " + e.getMessage());
             }
-        } else {
-            System.err.println("Ignorando chunk de áudio: streaming não está ativo.");
         }
     }
 
+    
+    public void pauseStreaming() {
+        isStreaming.set(false);
+        if (clientStream != null) {
+            clientStream.closeSend();
+            clientStream = null;
+        }
+    }
   
     public void stopStreaming() {
         isStreaming.set(false);
