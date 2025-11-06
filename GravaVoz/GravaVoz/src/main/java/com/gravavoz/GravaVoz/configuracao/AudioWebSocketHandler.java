@@ -47,7 +47,7 @@ public class AudioWebSocketHandler extends TextWebSocketHandler { // Correct bas
 		
 		if ("stop_streaming".equals(jsonNode.get("type").asText())) {
 			System.out.println("Fechamento requisitado");
-			this.pauseSession(session);
+			this.removeSession(session);
 		}
 
 	}

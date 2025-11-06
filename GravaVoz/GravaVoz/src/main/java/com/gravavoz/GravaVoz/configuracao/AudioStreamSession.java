@@ -3,30 +3,33 @@ package com.gravavoz.GravaVoz.configuracao;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.cloud.speech.v1.*;
-import com.google.cloud.speech.v1.StreamingRecognitionConfig.VoiceActivityTimeout;
 import com.google.protobuf.ByteString;
-import com.google.protobuf.Duration;
 import com.gravavoz.GravaVoz.service.SpeechToTextService;
 import org.springframework.web.socket.WebSocketSession;
+import com.google.api.gax.rpc.ClientStream;
+import com.google.api.gax.rpc.ResponseObserver;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.annotation.PreDestroy;
+
 import org.springframework.web.socket.TextMessage;
 
 public class AudioStreamSession {
     private final WebSocketSession webSocketSession;
     private final SpeechToTextService speechService;
     private SpeechClient speechClient;
-    private com.google.api.gax.rpc.ClientStream<StreamingRecognizeRequest> clientStream;
+    private ClientStream<StreamingRecognizeRequest> clientStream;
     private final AtomicBoolean isStreaming = new AtomicBoolean(false);
     private final List<String> transcriptBuffer = new ArrayList<>();
+    private ResponseObserver<StreamingRecognizeResponse> responseObserver;
 
     private final BlockingQueue<byte[]> audioQueue = new LinkedBlockingQueue<>();
     private Thread streamingWorkerThread;
@@ -49,9 +52,8 @@ public class AudioStreamSession {
         Recognition r = new Recognition();
         StreamingRecognitionConfig streamingConfig = r.recoginitionFeatures();
 
-        com.google.api.gax.rpc.ResponseObserver<StreamingRecognizeResponse> responseObserver = 
-            new com.google.api.gax.rpc.ResponseObserver<StreamingRecognizeResponse>() {
-                
+        this.responseObserver = new ResponseObserver<StreamingRecognizeResponse>() {
+               
                 @Override
                 public void onStart(com.google.api.gax.rpc.StreamController controller) {
                     System.out.println("Stream do Google Speech-to-Text iniciado");
@@ -183,7 +185,7 @@ public class AudioStreamSession {
     
     private void startStreamingWorker() {
         streamingWorkerThread = new Thread(() -> {
-            final int TARGET_CHUNK_SIZE = 65536; // 8KB
+            final int TARGET_CHUNK_SIZE = 65536; 
             final int MAX_WAIT_MS = 1000;
             
             ByteArrayOutputStream bufferStream = new ByteArrayOutputStream(TARGET_CHUNK_SIZE);
@@ -253,6 +255,10 @@ public class AudioStreamSession {
   
     public void stopStreaming() {
         isStreaming.set(false);
+        
+        if(responseObserver != null) {
+        }
+        
         if (clientStream != null) {
             clientStream.closeSend();
             clientStream = null;
@@ -262,6 +268,20 @@ public class AudioStreamSession {
             streamingWorkerThread = null;
         }
     }
+    
+    @PreDestroy
+    public void cleanup() {
+        isStreaming.set(false);
+        if (streamingWorkerThread != null) {
+            streamingWorkerThread.interrupt();
+        }
+        audioQueue.clear();
+        if (clientStream != null) {
+            clientStream.closeSend();
+        }
+    }
+
+    
 
 
 }

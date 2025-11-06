@@ -6,14 +6,7 @@ import com.google.protobuf.Duration;
 public class Recognition {
 
     public StreamingRecognitionConfig recoginitionFeatures() {
-        StreamingRecognitionConfig.VoiceActivityTimeout voiceActivityTimeout = StreamingRecognitionConfig.VoiceActivityTimeout.newBuilder()
-                .setSpeechEndTimeout(
-                        Duration.newBuilder()
-                                .setSeconds(5)
-                                .setNanos(0)
-                                .build()
-                )
-                .build();
+
 
         StreamingRecognitionConfig config = StreamingRecognitionConfig.newBuilder()
                 .setConfig(
